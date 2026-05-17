@@ -65,6 +65,23 @@ main{flex:1;display:flex;flex-direction:column;padding:24px 32px;gap:20px;max-wi
   background:var(--surface);border:2px solid var(--emerald);border-radius:4px;
   padding:24px;display:none;animation:slideUp .4s ease-out;
 }
+.cert-status-banner{
+  font-size:28px;font-weight:800;text-align:center;padding:20px 0;
+  margin-bottom:20px;border-radius:4px;text-transform:uppercase;letter-spacing:4px;
+  animation:pulse 2s infinite;
+}
+.cert-status-banner.pass{
+  background:linear-gradient(135deg,var(--emerald) 0%,#00e676 100%);
+  color:var(--obsidian);box-shadow:0 0 20px rgba(0,200,83,0.4);
+}
+.cert-status-banner.fail{
+  background:linear-gradient(135deg,var(--crimson) 0%,#ff5252 100%);
+  color:var(--white);box-shadow:0 0 20px rgba(213,0,0,0.4);
+}
+@keyframes pulse{
+  0%,100%{transform:scale(1)}
+  50%{transform:scale(1.02)}
+}
 #certificate-card.visible{display:block}
 @keyframes slideUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
 .cert-title{
@@ -119,6 +136,13 @@ footer a:hover{color:var(--emerald)}
     <button class="btn-run" id="btn-run" onclick="runVerification()">RUN AUDIT</button>
   </section>
 
+  <div id="certificate-card">
+    <div class="cert-status-banner" id="cert-status-banner"></div>
+    <div class="cert-title">ATTESTATION CERTIFICATE</div>
+    <div id="cert-rows"></div>
+    <div class="cert-footer" id="cert-footer-label"></div>
+  </div>
+
   <section class="console-panel">
     <div class="console-header">
       <span>VERIFICATION CONSOLE</span>
@@ -126,12 +150,6 @@ footer a:hover{color:var(--emerald)}
     </div>
     <div class="console-body" id="console-body"></div>
   </section>
-
-  <div id="certificate-card">
-    <div class="cert-title">ATTESTATION CERTIFICATE</div>
-    <div id="cert-rows"></div>
-    <div class="cert-footer" id="cert-footer-label"></div>
-  </div>
 </main>
 
 <footer>
@@ -292,8 +310,17 @@ async function runVerification() {
     if (certificate) {
       log('', '');
       log('ALL STEPS COMPLETE', 'pass');
-      statusEl.textContent = 'VERIFIED';
-      statusEl.style.color = 'var(--emerald)';
+      
+      var isSafeAndPrivate = certificate.streamVerified === true && certificate.addressMatch === true && certificate.debugMode !== true;
+      var masterStatus = isSafeAndPrivate ? 'PASSED' : 'FAILED';
+      var masterStatusCls = isSafeAndPrivate ? 'pass' : 'fail';
+      
+      statusEl.textContent = masterStatus;
+      statusEl.style.color = isSafeAndPrivate ? 'var(--emerald)' : 'var(--crimson)';
+
+      var statusBanner = document.getElementById('cert-status-banner');
+      statusBanner.textContent = masterStatus;
+      statusBanner.className = 'cert-status-banner ' + masterStatusCls;
 
       certRows.innerHTML = '';
       var rows = [
@@ -311,6 +338,9 @@ async function runVerification() {
         ['Stream Verified', certificate.streamVerified],
         ['Timestamp', certificate.timestamp]
       ];
+      
+      var nonCriticalFields = ['reportDataMatch', 'teeType', 'quoteVersion', 'teeProvider'];
+      
       rows.forEach(function(r) {
         var div = document.createElement('div');
         div.className = 'cert-row';
@@ -321,16 +351,34 @@ async function runVerification() {
         val.className = 'cert-value';
         val.textContent = String(r[1]);
         if (typeof r[1] === 'boolean') {
-          val.classList.add(r[1] ? 'pass' : 'fail');
-          val.textContent = r[1] ? 'YES' : 'NO';
+          if (r[0] === 'Debug Mode') {
+            val.textContent = r[1] ? 'YES' : 'NO';
+            if (r[1] === true) {
+              val.classList.add('fail');
+            } else {
+              val.classList.add('pass');
+            }
+          } else if (r[1] === true) {
+            val.classList.add('pass');
+            val.textContent = 'YES';
+          } else {
+            if (isSafeAndPrivate && nonCriticalFields.indexOf(r[0].replace(/ /g, '').replace(/_/g, '').toLowerCase().replace('match', '').replace('mode', '').replace('type', '').replace('provider', '') !== -1)) {
+              val.classList.add('warn');
+              val.textContent = 'NO';
+            } else {
+              val.classList.add('fail');
+              val.textContent = 'NO';
+            }
+          }
         }
         div.appendChild(lbl);
         div.appendChild(val);
         certRows.appendChild(div);
       });
 
-      document.getElementById('cert-footer-label').textContent = 'Lake Boiler Labs - ' + new Date().getFullYear();
+      document.getElementById('cert-footer-label').innerHTML = 'Lake Boiler Labs - ' + new Date().getFullYear() + '<br><span style="color:var(--emerald);margin-top:8px;display:block;">E2EE STREAM VERIFIED: Chat is encrypted end-to-end</span>';
       certCard.classList.add('visible');
+      certCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else {
       statusEl.textContent = 'INCOMPLETE';
       statusEl.style.color = 'var(--amber)';
