@@ -101,9 +101,6 @@ function deriveEthereumAddress(pubHex) {
 // --- INDEPENDENT_HARDWARE_QUOTE_PARSE ---
 
 function independentHardwareQuoteParse(quoteB64, expectedNonce) {
-    // INDEPENDENT_HARDWARE_QUOTE_PARSE
-    // Structural audit of the raw Intel TDX quote bytes.
-    // Does NOT simply return the server 'verified' boolean.
     const result = {
         teeType: null,
         debugMode: null,
@@ -131,11 +128,8 @@ function independentHardwareQuoteParse(quoteB64, expectedNonce) {
             result.warnings.push(`Unexpected TEE type: 0x${teeType.toString(16)}`);
         }
 
-        // TD Report structure starts at offset 48 in DCAP quote
         if (q.length >= 48 + 1024) {
             const td = 48;
-
-            // ATTRIBUTES at offset 64 within TD Report
             const attrOff = td + 64;
             if (attrOff + 8 <= q.length) {
                 const attr = q.readBigUInt64LE(attrOff);
@@ -145,7 +139,6 @@ function independentHardwareQuoteParse(quoteB64, expectedNonce) {
                 }
             }
 
-            // REPORTDATA at offset 512 within TD Report, 64 bytes total
             const rdOff = td + 512;
             if (rdOff + 64 <= q.length && expectedNonce) {
                 const rd = q.slice(rdOff, rdOff + 64);
@@ -174,7 +167,6 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
-// POST /api/attest - Steps 1-2 only
 app.post('/api/attest', async (req, res) => {
     const { targetUrl, model, apiKey } = req.body;
     if (!targetUrl || !model || !apiKey) {
@@ -247,7 +239,6 @@ app.post('/api/attest', async (req, res) => {
     }
 });
 
-// POST /api/verify - Full 5-step verification with SSE
 app.post('/api/verify', async (req, res) => {
     const { targetUrl, model, apiKey } = req.body;
     if (!targetUrl || !model || !apiKey) {
@@ -265,7 +256,6 @@ app.post('/api/verify', async (req, res) => {
     };
 
     try {
-        // Step 1: Nonce Generation
         const nonce = generateNonce();
         if (nonce.length !== NONCE_HEX) {
             send('error', { step: 1, message: `Nonce length violation: ${nonce.length} != ${NONCE_HEX}` });
@@ -274,7 +264,6 @@ app.post('/api/verify', async (req, res) => {
         }
         send('step', { step: 1, name: 'nonce_generation', status: 'pass', data: { nonce } });
 
-        // Step 2: Attestation Harvest
         const attUrl = `${targetUrl.replace(/\/$/, '')}/tee/attestation?model=${encodeURIComponent(model)}&nonce=${nonce}`;
         let attResp;
         try {
@@ -334,7 +323,6 @@ app.post('/api/verify', async (req, res) => {
             }
         });
 
-        // Step 3: Key Normalization
         const normKey = normalizeSigningKey(attData.signing_key || '');
         const wasNormalized = normKey !== (attData.signing_key || '');
         if (normKey.length !== 130 || !normKey.startsWith('04')) {
@@ -359,7 +347,6 @@ app.post('/api/verify', async (req, res) => {
             }
         });
 
-        // Step 4: Request Pipeline Mocking
         const ephKP = generateEphemeralKeyPair();
         const shared = deriveSharedSecret(ephKP.privateKeyHex, normKey);
         const symKey = deriveSymmetricKey(shared);
@@ -370,12 +357,14 @@ app.post('/api/verify', async (req, res) => {
             'Authorization': `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
             'X-Venice-TEE-Client-Pub-Key': ephKP.publicKeyHex,
-            'X-Venice-TEE-Model-Pub-Key': normKey
+            'X-Venice-TEE-Model-Pub-Key': normKey,
+            'X-Venice-TEE-Signing-Algo': 'ecdsa'
         };
 
         const chatBody = {
             model,
             stream: true,
+            max_tokens: 15,
             messages: [{ role: 'user', content: encPayload }]
         };
 
@@ -386,7 +375,6 @@ app.post('/api/verify', async (req, res) => {
             data: { encrypted: true, clientPubKey: ephKP.publicKeyHex, modelPubKey: normKey }
         });
 
-        // Step 5: Streaming Decryption Audit
         let chatResp;
         try {
             chatResp = await fetch(chatUrl, {
@@ -414,8 +402,10 @@ app.post('/api/verify', async (req, res) => {
         const reader = chatResp.body.getReader();
         const decoder = new TextDecoder();
         let sseBuf = '';
+        let shouldTerminate = false;
 
         while (true) {
+            if (shouldTerminate) break;
             const { done, value } = await reader.read();
             if (done) break;
             sseBuf += decoder.decode(value, { stream: true });
@@ -451,7 +441,14 @@ app.post('/api/verify', async (req, res) => {
                     const pt = decryptPayload(hexContent, ephKP.privateKeyHex);
                     fullText += pt;
                     chunkIdx++;
+                    
                     send('chunk', { step: 5, index: chunkIdx, plaintext: pt });
+
+                    if (chunkIdx >= 3 || pt.includes('.') || pt.includes('\n')) {
+                        await reader.cancel().catch(() => {});
+                        shouldTerminate = true;
+                        break;
+                    }
                 } catch (e) {
                     decryptErrors.push(`Chunk ${chunkIdx}: Decrypt failed: ${e.message}`);
                 }
@@ -467,7 +464,6 @@ app.post('/api/verify', async (req, res) => {
             data: { totalChunks: chunkIdx, errors: decryptErrors, fullText }
         });
 
-        // Certificate
         const certificate = {
             model: attData.model,
             teeProvider: attData.tee_provider,
