@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attestation Station - Lake Boiler Labs</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --obsidian:#0a0a0a;--surface:#111111;--surface2:#1a1a1a;--border:#2a2a2a;
+  --white:#e8e8e8;--muted:#888888;--mono:'Courier New',Consolas,monospace;
+  --emerald:#00c853;--amber:#ffc107;--crimson:#d50000;
+}
+html,body{height:100%;background:var(--obsidian);color:var(--white);font-family:var(--mono);font-size:14px;line-height:1.6}
+body{display:flex;flex-direction:column;min-height:100vh}
+
+header{
+  padding:24px 32px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
+}
+header h1{font-size:20px;font-weight:700;letter-spacing:1px}
+header h1 span{color:var(--emerald)}
+header .subtitle{font-size:12px;color:var(--muted);margin-top:2px}
+
+main{flex:1;display:flex;flex-direction:column;padding:24px 32px;gap:20px;max-width:960px;width:100%;margin:0 auto}
+
+.input-panel{
+  background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:20px;
+  display:grid;grid-template-columns:1fr 1fr;gap:12px;
+}
+.input-panel .full{grid-column:1/-1}
+.input-panel label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;display:block}
+.input-panel input{
+  width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:2px;
+  padding:10px 12px;color:var(--white);font-family:var(--mono);font-size:13px;outline:none;
+}
+.input-panel input:focus{border-color:var(--emerald)}
+.btn-run{
+  grid-column:1/-1;background:var(--emerald);color:var(--obsidian);border:none;border-radius:2px;
+  padding:12px;font-family:var(--mono);font-size:14px;font-weight:700;cursor:pointer;
+  text-transform:uppercase;letter-spacing:2px;transition:opacity .15s;
+}
+.btn-run:hover{opacity:.85}
+.btn-run:disabled{opacity:.4;cursor:not-allowed}
+
+.console-panel{
+  background:var(--surface);border:1px solid var(--border);border-radius:4px;
+  flex:1;min-height:260px;display:flex;flex-direction:column;overflow:hidden;
+}
+.console-header{
+  padding:10px 16px;border-bottom:1px solid var(--border);font-size:11px;
+  text-transform:uppercase;letter-spacing:1px;color:var(--muted);flex-shrink:0;
+  display:flex;justify-content:space-between;align-items:center;
+}
+.console-body{flex:1;overflow-y:auto;padding:12px 16px;font-size:12px;line-height:1.8}
+.console-line{white-space:pre-wrap;word-break:break-all}
+.console-line.pass{color:var(--emerald)}
+.console-line.warn{color:var(--amber)}
+.console-line.fail{color:var(--crimson)}
+.console-line.info{color:var(--muted)}
+.console-line.data{color:var(--white);padding-left:16px}
+.console-line.stream{color:var(--emerald);padding-left:16px;font-weight:700}
+
+#certificate-card{
+  background:var(--surface);border:2px solid var(--emerald);border-radius:4px;
+  padding:24px;display:none;animation:slideUp .4s ease-out;
+}
+#certificate-card.visible{display:block}
+@keyframes slideUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+.cert-title{
+  font-size:16px;font-weight:700;color:var(--emerald);text-transform:uppercase;
+  letter-spacing:3px;text-align:center;margin-bottom:20px;
+  border-bottom:1px solid var(--emerald);padding-bottom:12px;
+}
+.cert-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)}
+.cert-row:last-child{border-bottom:none}
+.cert-label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:1px}
+.cert-value{color:var(--white);font-size:13px;text-align:right;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cert-value.pass{color:var(--emerald)}
+.cert-value.fail{color:var(--crimson)}
+.cert-value.warn{color:var(--amber)}
+.cert-footer{text-align:center;margin-top:16px;font-size:11px;color:var(--muted);letter-spacing:1px}
+
+footer{
+  padding:16px 32px;text-align:center;font-size:11px;color:var(--muted);
+  border-top:1px solid var(--border);flex-shrink:0;letter-spacing:.5px;
+}
+footer a{color:var(--muted);text-decoration:none}
+footer a:hover{color:var(--emerald)}
+
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--obsidian)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>ATTESTATION <span>STATION</span></h1>
+    <div class="subtitle">E2EE LLM Endpoint Verification - Lake Boiler Labs</div>
+  </div>
+</header>
+
+<main>
+  <section class="input-panel" id="input-panel">
+    <div>
+      <label for="target-url">Target URL</label>
+      <input type="text" id="target-url" placeholder="https://api.venice.ai" value="https://api.venice.ai">
+    </div>
+    <div>
+      <label for="model-id">Model ID</label>
+      <input type="text" id="model-id" placeholder="llama-3.3-70b" value="llama-3.3-70b">
+    </div>
+    <div class="full">
+      <label for="api-key">API Key</label>
+      <input type="password" id="api-key" placeholder="vp_...">
+    </div>
+    <button class="btn-run" id="btn-run" onclick="runVerification()">RUN AUDIT</button>
+  </section>
+
+  <section class="console-panel">
+    <div class="console-header">
+      <span>VERIFICATION CONSOLE</span>
+      <span id="status-indicator">IDLE</span>
+    </div>
+    <div class="console-body" id="console-body"></div>
+  </section>
+
+  <div id="certificate-card">
+    <div class="cert-title">ATTESTATION CERTIFICATE</div>
+    <div id="cert-rows"></div>
+    <div class="cert-footer" id="cert-footer-label"></div>
+  </div>
+</main>
+
+<footer>
+  Copyright <span id="footer-year"></span> Lake Boiler Labs. All rights reserved. Contact: <a href="mailto:lake.boiler.labs@gmail.com">lake.boiler.labs@gmail.com</a>
+</footer>
+
+<script>
+document.getElementById('footer-year').textContent = new Date().getFullYear();
+
+const consoleEl = document.getElementById('console-body');
+const statusEl = document.getElementById('status-indicator');
+const certCard = document.getElementById('certificate-card');
+const certRows = document.getElementById('cert-rows');
+const btn = document.getElementById('btn-run');
+
+function log(text, cls) {
+  const div = document.createElement('div');
+  div.className = 'console-line ' + (cls || '');
+  div.textContent = text;
+  consoleEl.appendChild(div);
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+function clearConsole() {
+  consoleEl.innerHTML = '';
+  certCard.classList.remove('visible');
+  certRows.innerHTML = '';
+}
+
+async function runVerification() {
+  clearConsole();
+  const targetUrl = document.getElementById('target-url').value.trim();
+  const model = document.getElementById('model-id').value.trim();
+  const apiKey = document.getElementById('api-key').value.trim();
+
+  if (!targetUrl || !model || !apiKey) {
+    log('ERROR: All fields are required.', 'fail');
+    return;
+  }
+
+  btn.disabled = true;
+  statusEl.textContent = 'RUNNING';
+  statusEl.style.color = 'var(--amber)';
+
+  log('Initializing verification pipeline...', 'info');
+  log('Target: ' + targetUrl, 'info');
+  log('Model: ' + model, 'info');
+
+  try {
+    const resp = await fetch('/api/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetUrl, model, apiKey })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }));
+      log('ERROR: ' + (err.error || resp.statusText), 'fail');
+      statusEl.textContent = 'FAILED';
+      statusEl.style.color = 'var(--crimson)';
+      btn.disabled = false;
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let sseBuf = '';
+    let certificate = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      sseBuf += decoder.decode(value, { stream: true });
+
+      const parts = sseBuf.split('\n\n');
+      sseBuf = parts.pop() || '';
+
+      for (const part of parts) {
+        let eventType = '';
+        let dataStr = '';
+        for (const line of part.split('\n')) {
+          if (line.startsWith('event:')) eventType = line.slice(6).trim();
+          if (line.startsWith('data:')) dataStr = line.slice(5).trim();
+        }
+        if (!dataStr) continue;
+        let data;
+        try { data = JSON.parse(dataStr); } catch (_) { continue; }
+
+        if (eventType === 'step') {
+          const s = data;
+          const stepNum = s.step;
+          const stepName = s.name.replace(/_/g, ' ').toUpperCase();
+          const statusCls = s.status === 'pass' ? 'pass' : (s.status === 'warning' ? 'warn' : 'fail');
+          const statusLabel = s.status.toUpperCase();
+
+          log('', '');
+          log('STEP ' + stepNum + ': ' + stepName + ' ........... ' + statusLabel, statusCls);
+
+          if (stepNum === 1 && s.data) {
+            log('Nonce: ' + s.data.nonce, 'data');
+          }
+          if (stepNum === 2 && s.data) {
+            const d = s.data;
+            log('Server verified flag: ' + d.verified, d.verified ? 'pass' : 'warn');
+            log('Nonce match: ' + d.nonceMatch, d.nonceMatch ? 'pass' : 'fail');
+            log('Intel quote valid Base64: ' + d.intelQuoteValid, d.intelQuoteValid ? 'pass' : 'fail');
+            log('TEE provider: ' + (d.teeProvider || 'N/A'), 'data');
+            if (d.independentQuoteParse) {
+              const qp = d.independentQuoteParse;
+              log('[INDEPENDENT_HARDWARE_QUOTE_PARSE]', 'info');
+              log('  TEE type: 0x' + (qp.teeType !== null ? qp.teeType.toString(16) : 'N/A'), 'data');
+              log('  Debug mode: ' + qp.debugMode, qp.debugMode ? 'fail' : 'pass');
+              log('  Report data match: ' + qp.reportDataMatch, qp.reportDataMatch ? 'pass' : 'warn');
+              log('  Quote version: ' + (qp.quoteVersion !== null ? qp.quoteVersion : 'N/A'), 'data');
+              log('  Raw bytes length: ' + qp.rawBytesLength, 'data');
+              if (qp.warnings && qp.warnings.length > 0) {
+                qp.warnings.forEach(function(w) { log('  WARNING: ' + w, 'warn'); });
+              }
+              if (qp.errors && qp.errors.length > 0) {
+                qp.errors.forEach(function(e) { log('  ERROR: ' + e, 'fail'); });
+              }
+            }
+            if (d.nvidiaPayload) {
+              log('NVIDIA payload: present', 'data');
+            }
+          }
+          if (stepNum === 3 && s.data) {
+            const d = s.data;
+            log('Signing key: ' + d.signingKey.substring(0, 20) + '...', 'data');
+            log('Key normalized: ' + d.normalized, d.normalized ? 'warn' : 'pass');
+            log('Derived address: ' + d.derivedAddress, 'data');
+            log('Address match: ' + d.addressMatch, d.addressMatch ? 'pass' : 'warn');
+          }
+          if (stepNum === 4 && s.data) {
+            log('Encrypted probe payload sent', 'pass');
+            log('Client ephemeral key: ' + s.data.clientPubKey.substring(0, 20) + '...', 'data');
+          }
+        }
+
+        if (eventType === 'chunk') {
+          log(data.plaintext || '', 'stream');
+        }
+
+        if (eventType === 'error') {
+          log('ERROR at step ' + (data.step || '?') + ': ' + data.message, 'fail');
+          statusEl.textContent = 'FAILED';
+          statusEl.style.color = 'var(--crimson)';
+          btn.disabled = false;
+          return;
+        }
+
+        if (eventType === 'complete') {
+          certificate = data.certificate;
+        }
+      }
+    }
+
+    if (certificate) {
+      log('', '');
+      log('ALL STEPS COMPLETE', 'pass');
+      statusEl.textContent = 'VERIFIED';
+      statusEl.style.color = 'var(--emerald)';
+
+      certRows.innerHTML = '';
+      var rows = [
+        ['Model', certificate.model],
+        ['TEE Provider', certificate.teeProvider],
+        ['Signing Key', certificate.signingKey],
+        ['Signing Address', certificate.signingAddress],
+        ['Derived Address', certificate.derivedAddress],
+        ['Address Match', certificate.addressMatch],
+        ['Nonce', certificate.nonce],
+        ['Intel Quote Validated', certificate.intelQuoteValidated],
+        ['Debug Mode', certificate.debugMode],
+        ['TEE Type', certificate.teeType !== null ? '0x' + certificate.teeType.toString(16) : 'N/A'],
+        ['Report Data Match', certificate.reportDataMatch],
+        ['Stream Verified', certificate.streamVerified],
+        ['Timestamp', certificate.timestamp]
+      ];
+      rows.forEach(function(r) {
+        var div = document.createElement('div');
+        div.className = 'cert-row';
+        var lbl = document.createElement('span');
+        lbl.className = 'cert-label';
+        lbl.textContent = r[0];
+        var val = document.createElement('span');
+        val.className = 'cert-value';
+        val.textContent = String(r[1]);
+        if (typeof r[1] === 'boolean') {
+          val.classList.add(r[1] ? 'pass' : 'fail');
+          val.textContent = r[1] ? 'YES' : 'NO';
+        }
+        div.appendChild(lbl);
+        div.appendChild(val);
+        certRows.appendChild(div);
+      });
+
+      document.getElementById('cert-footer-label').textContent = 'Lake Boiler Labs - ' + new Date().getFullYear();
+      certCard.classList.add('visible');
+    } else {
+      statusEl.textContent = 'INCOMPLETE';
+      statusEl.style.color = 'var(--amber)';
+    }
+
+  } catch (err) {
+    log('FATAL: ' + err.message, 'fail');
+    statusEl.textContent = 'ERROR';
+    statusEl.style.color = 'var(--crimson)';
+  }
+
+  btn.disabled = false;
+}
+</script>
+</body>
+</html>
